@@ -28,16 +28,37 @@ if (empty($_REQUEST["message"])) {
 	$_REQUEST["message"] = '';
 }
 
-$validatorslib = TikiLib::lib('validators');
+$virtualRequest = json_decode($_REQUEST['input'], true);
+// add other required fields
+$virtualRequest['trackerId'] = $_REQUEST['trackerid'];
+$virtualInput = new JitFilter($virtualRequest);
+$trackerUtilities = new Services_Tracker_Utilities();
+list($definition, $fields) = $trackerUtilities->getDefinitionAndFieldMapping($virtualInput);
 
-if (!in_array($_REQUEST['validator'], $validatorslib->available)) {
+if (! $definition) {
 	echo '{}';
 	exit;
 }
+list($fieldsResult, $errors) = $trackerUtilities->validateTracker($definition, 0, $fields);
 
-$validatorslib->setInput($_REQUEST["input"]);
-$result = $validatorslib->validateInput($_REQUEST["validator"], $_REQUEST["parameter"], $_REQUEST["message"]);
+$key = $_REQUEST['trackerinputfield'];
+if (preg_match('/ins_/', $key)) { //make compatible with the 'ins_' keys
+	$id = (int)str_replace('ins_', '', $key);
+	$field = $definition->getField($id);
+} else {
+	$field = $definition->getFieldFromPermName($key);
+}
 
 header('Content-Type: application/json');
-echo json_encode($result);
+if(is_array($errors) && is_array($errors['err_value'])){
+	foreach($errors['err_value'] as $error){
+		if ($error['fieldId'] == $field['fieldId']) {
+			echo json_encode($error['errorMsg']);
+			return;
+		}
+	}
+}
+
+echo json_encode(true);
+return;
 

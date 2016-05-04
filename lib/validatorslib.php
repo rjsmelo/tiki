@@ -54,6 +54,26 @@ class Validators
 
 	function generateTrackerValidateJS( $fields_data, $prefix = 'ins_', $custom_rules = '', $custom_messages = '' )
 	{
+
+		$get_input_function = 'function(){var input = {}; ';
+		foreach ($fields_data as $field_value) {
+			if ( $prefix == 'ins_' && $field_value['type'] == 'a') {
+				$get_input_function .= 'input.' . $prefix . $field_value['fieldId'] .'=$("#area_'.$field_value['fieldId'].'").val(); ';
+			} elseif ( $prefix == 'ins_' && $field_value['type'] == 'k') {
+				$get_input_function .= 'input.'.$prefix.$field_value['fieldId'].'=$("#page_selector_'.$field_value['fieldId'].'").val(); ';
+			} elseif ($field_value['type'] == 'wiki') {
+				$get_input_function .= 'input.' . $prefix . $field_value['fieldId'] .'=$("[name='.$prefix.$field_value['fieldId'].']").val(); ';
+			} else {
+				if ( $field_value['type'] == 'g' or $field_value['type'] == 'e' or $field_value['type'] == 'y' or $field_value['type'] == 'd' or $field_value['type'] == 'D' ) {
+					// Let's handle drop-down style fields
+					$get_input_function .= 'input.' . $prefix . $field_value['fieldId'] .'=$(\'select[name="'.$prefix.$field_value['fieldId'].'"] option:selected\').text(); ';
+				} else {	// Let's handle text style fields
+					$get_input_function .= 'input.' . $prefix . $field_value['fieldId'] .'=$("#'.$prefix.$field_value['fieldId'].'").val(); ';
+				}
+			}
+		}
+		$get_input_function .= ' console.log(input); console.log('.json_encode($fields_data).'); return JSON.stringify(input);}';
+
 		$validationjs = 'rules: { ';
 		foreach ($fields_data as $field_value) {
 			if ($field_value['validation'] || $field_value['isMandatory'] == 'y') {
@@ -90,6 +110,8 @@ class Validators
 					$validationjs .= 'type: "post", ';
 					$validationjs .= 'data: { ';
 					$validationjs .= 'validator: "' .$field_value['validation'].'", ';
+					$validationjs .= 'trackerid: "' . $field_value['trackerId'] . '", ';
+					$validationjs .= 'trackerinputfield: "'.$prefix.$field_value['fieldId'].'", ';
 					if ($field_value['validation'] == 'distinct' && empty($field_value['validationParam'])) {
 						if (isset($_REQUEST['itemId']) && $_REQUEST['itemId'] > 0) {
 							$current_id = $_REQUEST['itemId'];
@@ -101,20 +123,8 @@ class Validators
 						$validationjs .= 'parameter: "' .addslashes($field_value['validationParam']).'", ';
 					}
 					$validationjs .= 'message: "' .tra($field_value['validationMessage']).'", ';
-					$validationjs .= 'input: function() { ';
-					if ( $prefix == 'ins_' && $field_value['type'] == 'a') {
-						$validationjs .= 'return $("#area_'.$field_value['fieldId'].'").val(); ';
-					} elseif ( $prefix == 'ins_' && $field_value['type'] == 'k') {
-						$validationjs .= 'return $("#page_selector_'.$field_value['fieldId'].'").val(); ';
-					} else {
-						if ( $field_value['type'] == 'g' or $field_value['type'] == 'e' or $field_value['type'] == 'y' or $field_value['type'] == 'd' or $field_value['type'] == 'D' ) {
-							// Let's handle drop-down style fields
-							$validationjs .= 'return $(\'select[name="'.$prefix.$field_value['fieldId'].'"] option:selected\').text(); ';
-						} else {	// Let's handle text style fields
-							$validationjs .= 'return $("#'.$prefix.$field_value['fieldId'].'").val(); ';
-						}
-					}
-					$validationjs .= '} } } ';
+					$validationjs .= 'input: ' . $get_input_function;
+					$validationjs .= '} } ';
 				} else {
 					// remove last comma (not supported in IE7)
 					$validationjs = rtrim($validationjs, ' ,');

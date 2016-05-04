@@ -40,43 +40,11 @@ class Services_Tracker_Utilities
 
 	private function replaceItem($definition, $itemId, $status, $fieldMap, array $options)
 	{
-		$trackerId = $definition->getConfiguration('trackerId');
-		$fields = array();
-
-		$factory = $definition->getFieldFactory();
-		foreach ($fieldMap as $key => $value) {
-			if (preg_match('/ins_/', $key)) { //make compatible with the 'ins_' keys
-				$id = (int)str_replace('ins_', '', $key);
-				if ($field = $definition->getField($id)) {
-					$field['value'] = $value;
-					$fields[$field['fieldId']] = $field;
-				}
-			} else if ($field = $definition->getFieldFromPermName($key)) {
-				$field['value'] = $value;
-				$fields[$field['fieldId']] = $field;
-			}
-		}
-
-		if ($itemId) {
-			$item = $this->getItem($definition->getConfiguration('trackerId'), $itemId);
-			$initialData = new JitFilter($item['fields']);
-		} else {
-			$initialData = new JitFilter(array());
-		}
-
-		// Add unspecified fields for the validation to work correctly
-		foreach ($definition->getFields() as $field) {
-			$fieldId = $field['fieldId'];
-			if (! isset($fields[$fieldId])) {
-				$permName = $field['permName'];
-				$field['value'] = $initialData->$permName->none();
-				$fields[$fieldId] = $field;
-			}
-		}
+		list($fields, $errors) = $this->validateTracker($definition, $itemId, $fieldMap);
 
 		$trklib = TikiLib::lib('trk');
+		$trackerId = $definition->getConfiguration('trackerId');
 		$categorizedFields = $definition->getCategorizedFields();
-		$errors = $trklib->check_field_values(array('data' => $fields), $categorizedFields, $trackerId, $itemId ? $itemId : '');
 
 		if ($options['skip_categories']) {
 			foreach ($categorizedFields as $fieldId) {
@@ -529,6 +497,124 @@ EXPORT;
 		}
 
 		return $newTrackerId;
+	}
+
+	/**
+	 * @param $definition
+	 * @param $itemId
+	 * @param $fieldMap
+	 * @return array
+	 * @throws Exception
+	 */
+	public function validateTracker($definition, $itemId, $fieldMap)
+	{
+		$trackerId = $definition->getConfiguration('trackerId');
+		$fields = array();
+
+		$factory = $definition->getFieldFactory();
+		foreach ($fieldMap as $key => $value) {
+			if (preg_match('/ins_/', $key)) { //make compatible with the 'ins_' keys
+				$id = (int)str_replace('ins_', '', $key);
+				if ($field = $definition->getField($id)) {
+					$field['value'] = $value;
+					$fields[$field['fieldId']] = $field;
+				}
+			} else {
+				if ($field = $definition->getFieldFromPermName($key)) {
+					$field['value'] = $value;
+					$fields[$field['fieldId']] = $field;
+				}
+			}
+		}
+
+		if ($itemId) {
+			$item = $this->getItem($definition->getConfiguration('trackerId'), $itemId);
+			$initialData = new JitFilter($item['fields']);
+		} else {
+			$initialData = new JitFilter(array());
+		}
+
+		// Add unspecified fields for the validation to work correctly
+		foreach ($definition->getFields() as $field) {
+			$fieldId = $field['fieldId'];
+			if (!isset($fields[$fieldId])) {
+				$permName = $field['permName'];
+				$field['value'] = $initialData->$permName->none();
+				$fields[$fieldId] = $field;
+			}
+		}
+
+		$trklib = TikiLib::lib('trk');
+		$categorizedFields = $definition->getCategorizedFields();
+		$errors = $trklib->check_field_values(
+		array('data' => $fields),
+		$categorizedFields,
+		$trackerId,
+		$itemId ? $itemId : ''
+		);
+
+		return array($fields, $errors);
+	}
+
+	public function getDefinitionAndFieldMapping($input)
+	{
+		$trackerId = $input->trackerId->int();
+
+		if (! $trackerId) {
+			throw new Services_Exception_NotFound;
+		}
+
+		$definition = Tracker_Definition::get($trackerId);
+
+		if (! $definition) {
+			throw new Services_Exception_NotFound;
+		}
+
+		$itemObject = Tracker_Item::newItem($trackerId);
+
+		if (! $itemObject->canModify()) {
+			throw new Services_Exception_Denied;
+		}
+
+		$fields = $input->fields->none();
+		$forced = $input->forced->none();
+
+		if (empty($fields)) {
+			$toRemove = array();
+			$processedFields = $itemObject->prepareInput($input);
+
+			$fields = array();
+			foreach ($processedFields as $k => $f) {
+				$permName = $f['permName'];
+				$fields[$permName] = $f['value'];
+
+				if (isset($forced[$permName])) {
+					$toRemove[$permName] = $k;
+				}
+			}
+
+			foreach ($toRemove as $permName => $key) {
+				unset($fields[$permName]);
+				unset($processedFields[$key]);
+			}
+		} else {
+			$out = array();
+			foreach ($fields as $key => $value) {
+				if ($itemObject->canModifyField($key)) {
+					$out[$key] = $value;
+				}
+			}
+			$fields = $out;
+		}
+
+		if (! empty($fields)) {
+			foreach ($forced as $key => $value) {
+				if ($itemObject->canModifyField($key)) {
+					$fields[$key] = $value;
+				}
+			}
+		}
+		return array($definition, $fields);
 	}
 }
 
